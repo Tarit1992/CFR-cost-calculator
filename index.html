@@ -2,37 +2,34 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>CFR Calculator Pro+</title>
+<title>CFR Auto Cost Calculator</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
-table { border-collapse: collapse; }
-td,th { padding:8px; border:1px solid #ccc; }
-input { width:90px; }
+table { border-collapse: collapse; margin-top:10px;}
+td,th { border:1px solid #ccc; padding:6px;}
+input { width:90px;}
 </style>
+
 </head>
 
 <body>
 
-<h2>📊 CFR Calculator (Manual + Upload)</h2>
+<h2>📊 Auto CFR → Cost per Unit</h2>
 
 <input type="file" id="upload"><br><br>
 
-<div id="mapping"></div>
-
-<br>
 Freight (USD): <input id="freight" value="0">
-Rate: <input id="rate" value="0">
+Rate: <input id="rate" value="33">
 Tax %: <input id="tax" value="0">
 Containers: <input id="container" value="0">
 
 <br><br>
-<button onclick="loadData()">Load From File</button>
-<button onclick="createManual()">Manual 20 Rows</button>
-<button onclick="process()">Calculate</button>
+<button onclick="autoProcess()">Auto Detect + Load</button>
+<button onclick="calculate()">Calculate Cost</button>
 
-<h3>Editable Data</h3>
-<table id="editTable"></table>
+<h3>Data</h3>
+<table id="table"></table>
 
 <h3>Result</h3>
 <table id="result"></table>
@@ -49,64 +46,77 @@ document.getElementById('upload').addEventListener('change', function(e){
     let sheet = wb.Sheets[wb.SheetNames[0]];
     rawData = XLSX.utils.sheet_to_json(sheet, {header:1});
     headers = rawData[0];
-    renderMapping();
   };
   reader.readAsBinaryString(e.target.files[0]);
 });
 
-function renderMapping(){
-  let html = "<h3>Select Columns</h3>";
-  html += createSelect("item","Item");
-  html += createSelect("qty","Qty");
-  html += createSelect("price","Price");
-  document.getElementById("mapping").innerHTML = html;
-}
-
-function createSelect(id,label){
-  let html = label + ": <select id='"+id+"'>";
-  headers.forEach((h,i)=>{
-    html += `<option value="${i}">${h}</option>`;
-  });
-  html += "</select><br>";
-  return html;
-}
-
-// 🔥 Manual 20 rows
-function createManual(){
-  let table = document.getElementById("editTable");
-  table.innerHTML = "<tr><th>Item</th><th>Qty</th><th>Unit Price</th></tr>";
-
-  for(let i=1;i<=20;i++){
-    table.innerHTML += `<tr>
-      <td><input value="Item ${i}"></td>
-      <td><input type="number" value="0"></td>
-      <td><input type="number" value="0"></td>
-    </tr>`;
+// 🔥 หา column อัตโนมัติ
+function detectColumns(headers){
+  function find(keys){
+    return headers.findIndex(h =>
+      keys.some(k => h.toLowerCase().includes(k))
+    );
   }
+
+  return {
+    item: find(["item","description","model"]),
+    qty: find(["qty","quantity","pcs"]),
+    price: find(["price","unit","cost","cfr"])
+  };
 }
 
-// 🔥 Load from Excel
-function loadData(){
-  let itemCol = document.getElementById("item").value;
-  let qtyCol = document.getElementById("qty").value;
-  let priceCol = document.getElementById("price").value;
+// 🔥 หา freight
+function detectFreight(data){
+  let freight = 0;
 
-  let table = document.getElementById("editTable");
+  data.forEach(row=>{
+    row.forEach(cell=>{
+      if(typeof cell === "string"){
+        let t = cell.toLowerCase();
+        if(t.includes("freight")){
+          let num = t.match(/[\d,]+\.?\d*/);
+          if(num){
+            freight = parseFloat(num[0].replace(/,/g,""));
+          }
+        }
+      }
+    });
+  });
+
+  return freight;
+}
+
+// 🔥 load data
+function autoProcess(){
+
+  let col = detectColumns(headers);
+
+  let freight = detectFreight(rawData);
+  if(freight){
+    document.getElementById("freight").value = freight;
+  }
+
+  let table = document.getElementById("table");
   table.innerHTML = "<tr><th>Item</th><th>Qty</th><th>Unit Price</th></tr>";
 
-  rawData.slice(1).forEach((r)=>{
+  rawData.slice(1).forEach(r=>{
+    let item = r[col.item] || "";
+    let qty = r[col.qty] || 0;
+    let price = r[col.price] || 0;
+
     table.innerHTML += `<tr>
-      <td><input value="${r[itemCol] || ""}"></td>
-      <td><input type="number" value="${r[qtyCol] || 0}"></td>
-      <td><input type="number" value="${r[priceCol] || 0}"></td>
+      <td><input value="${item}"></td>
+      <td><input type="number" value="${qty}"></td>
+      <td><input type="number" value="${price}"></td>
     </tr>`;
   });
+
 }
 
-// 🔥 Calculate
-function process(){
+// 🔥 คำนวณต้นทุนต่อหน่วย
+function calculate(){
 
-  let rows = document.querySelectorAll("#editTable tr");
+  let rows = document.querySelectorAll("#table tr");
 
   let freight = parseFloat(document.getElementById("freight").value) || 0;
   let rate = parseFloat(document.getElementById("rate").value) || 0;
@@ -124,10 +134,10 @@ function process(){
     let inputs = r.querySelectorAll("input");
 
     let item = inputs[0].value;
-    let qty = parseFloat(inputs[1].value) || 0;
-    let price = parseFloat(inputs[2].value) || 0;
+    let qty = parseFloat(inputs[1].value);
+    let price = parseFloat(inputs[2].value);
 
-    if(qty === 0 || price === 0) return;
+    if(!qty || !price) return;
 
     let total = qty * price;
     totalCFR += total;
@@ -138,13 +148,13 @@ function process(){
   let html = "<tr><th>Item</th><th>Cost/Unit (THB)</th></tr>";
 
   data.forEach(r=>{
-    let freightShare = totalCFR ? (r.total/totalCFR)*freight : 0;
+    let freightShare = (r.total/totalCFR)*freight;
     let cif = r.total + freightShare;
     let tax = cif * taxRate;
-    let clearingShare = totalCFR ? (r.total/totalCFR)*clearingTotal : 0;
+    let clearingShare = (r.total/totalCFR)*clearingTotal;
 
     let totalTHB = (cif + tax)*rate + clearingShare;
-    let costUnit = r.qty ? totalTHB / r.qty : 0;
+    let costUnit = totalTHB / r.qty;
 
     html += `<tr>
       <td>${r.item}</td>
@@ -153,6 +163,7 @@ function process(){
   });
 
   document.getElementById("result").innerHTML = html;
+
 }
 
 </script>
