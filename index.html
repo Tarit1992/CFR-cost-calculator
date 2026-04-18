@@ -10,12 +10,11 @@ table { border-collapse: collapse; }
 td,th { padding:8px; border:1px solid #ccc; }
 input { width:90px; }
 </style>
-
 </head>
 
 <body>
 
-<h2>📊 CFR Calculator (Production Ready)</h2>
+<h2>📊 CFR Calculator (Manual + Upload)</h2>
 
 <input type="file" id="upload"><br><br>
 
@@ -28,7 +27,8 @@ Tax %: <input id="tax" value="0">
 Containers: <input id="container" value="0">
 
 <br><br>
-<button onclick="loadData()">Load Data</button>
+<button onclick="loadData()">Load From File</button>
+<button onclick="createManual()">Manual 20 Rows</button>
 <button onclick="process()">Calculate</button>
 
 <h3>Editable Data</h3>
@@ -71,8 +71,22 @@ function createSelect(id,label){
   return html;
 }
 
-function loadData(){
+// 🔥 Manual 20 rows
+function createManual(){
+  let table = document.getElementById("editTable");
+  table.innerHTML = "<tr><th>Item</th><th>Qty</th><th>Unit Price</th></tr>";
 
+  for(let i=1;i<=20;i++){
+    table.innerHTML += `<tr>
+      <td><input value="Item ${i}"></td>
+      <td><input type="number" value="0"></td>
+      <td><input type="number" value="0"></td>
+    </tr>`;
+  }
+}
+
+// 🔥 Load from Excel
+function loadData(){
   let itemCol = document.getElementById("item").value;
   let qtyCol = document.getElementById("qty").value;
   let priceCol = document.getElementById("price").value;
@@ -81,30 +95,24 @@ function loadData(){
   table.innerHTML = "<tr><th>Item</th><th>Qty</th><th>Unit Price</th></tr>";
 
   rawData.slice(1).forEach((r)=>{
-    let item = r[itemCol] || "";
-    let qty = r[qtyCol] || 0;
-    let price = r[priceCol] || 0;
-
-    let row = `<tr>
-      <td><input value="${item}"></td>
-      <td><input type="number" value="${qty}"></td>
-      <td><input type="number" value="${price}"></td>
+    table.innerHTML += `<tr>
+      <td><input value="${r[itemCol] || ""}"></td>
+      <td><input type="number" value="${r[qtyCol] || 0}"></td>
+      <td><input type="number" value="${r[priceCol] || 0}"></td>
     </tr>`;
-
-    table.innerHTML += row;
   });
 }
 
+// 🔥 Calculate
 function process(){
 
   let rows = document.querySelectorAll("#editTable tr");
 
   let freight = parseFloat(document.getElementById("freight").value) || 0;
   let rate = parseFloat(document.getElementById("rate").value) || 0;
-  let taxRate = (parseFloat(document.getElementById("tax").value) || 0) / 100;
+  let taxRate = (parseFloat(document.getElementById("tax").value) || 0)/100;
   let container = parseFloat(document.getElementById("container").value) || 0;
 
-  // 🔥 ค่าเคลียร์ = 40,000 ต่อ ตู้
   let clearingTotal = container * 40000;
 
   let data = [];
