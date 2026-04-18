@@ -2,202 +2,151 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Procurement Cost Calculator</title>
-
-<!-- Libraries -->
+<title>CFR Calculator Pro+</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 
 <style>
-body { font-family: Arial; padding:20px; }
-input { margin:5px; }
-table { border-collapse: collapse; margin-top:20px; }
-th, td { padding:8px; border:1px solid #ccc; }
+table { border-collapse: collapse; }
+td,th { padding:8px; border:1px solid #ccc; }
+input { width:90px; }
 </style>
+
 </head>
 
 <body>
 
-<h2>📊 Procurement Cost Calculator (Pro Version)</h2>
+<h2>📊 CFR Calculator (Production Ready)</h2>
 
-<input type="file" id="upload" multiple />
+<input type="file" id="upload"><br><br>
+
+<div id="mapping"></div>
 
 <br>
-Freight (USD): <input id="freight" value="4000">
-Exchange Rate: <input id="rate" value="33">
-Tax (% default): <input id="tax" value="0">
-Clearing Cost (THB): <input id="clear" value="160000">
+Freight (USD): <input id="freight" value="0">
+Rate: <input id="rate" value="0">
+Tax %: <input id="tax" value="0">
+Containers: <input id="container" value="0">
 
 <br><br>
+<button onclick="loadData()">Load Data</button>
 <button onclick="process()">Calculate</button>
-<button onclick="download()">Export Excel</button>
 
-<table id="table">
-<thead>
-<tr>
-<th>Item</th>
-<th>Qty</th>
-<th>Unit Price</th>
-<th>Currency</th>
-<th>Total CFR</th>
-<th>CIF</th>
-<th>Tax</th>
-<th>Total THB</th>
-<th>Cost/Unit</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+<h3>Editable Data</h3>
+<table id="editTable"></table>
+
+<h3>Result</h3>
+<table id="result"></table>
 
 <script>
-let data = [];
 
-// 🔹 detect column smart
-function smartMap(row){
-  let keys = Object.keys(row);
+let rawData = [];
+let headers = [];
 
-  let item = keys.find(k => /item|desc/i.test(k));
-  let qty = keys.find(k => /qty|quantity/i.test(k));
-  let price = keys.find(k => /price|unit|cost/i.test(k));
-  let currency = keys.find(k => /cur|currency/i.test(k));
-
-  return {
-    item: row[item] || "Unknown",
-    qty: parseFloat(row[qty]) || 0,
-    price: parseFloat(row[price]) || 0,
-    currency: row[currency] || "USD"
+document.getElementById('upload').addEventListener('change', function(e){
+  let reader = new FileReader();
+  reader.onload = function(e){
+    let wb = XLSX.read(e.target.result, {type:'binary'});
+    let sheet = wb.Sheets[wb.SheetNames[0]];
+    rawData = XLSX.utils.sheet_to_json(sheet, {header:1});
+    headers = rawData[0];
+    renderMapping();
   };
-}
-
-// 🔹 currency convert
-function convertToUSD(value, currency){
-  if(currency === "USD") return value;
-  if(currency === "CNY") return value * 0.14;
-  if(currency === "EUR") return value * 1.08;
-  if(currency === "THB") return value / 33;
-  return value;
-}
-
-// 🔹 upload handler
-document.getElementById('upload').addEventListener('change', async function(e){
-  data = [];
-  let files = e.target.files;
-
-  for(let file of files){
-
-    // 📗 Excel
-    if(file.name.endsWith(".xlsx")){
-      let reader = new FileReader();
-      reader.onload = function(e){
-        let wb = XLSX.read(e.target.result, {type:'binary'});
-        let sheet = wb.Sheets[wb.SheetNames[0]];
-        let json = XLSX.utils.sheet_to_json(sheet);
-        data.push(...json.map(smartMap));
-      };
-      reader.readAsBinaryString(file);
-    }
-
-    // 📄 PDF
-    else if(file.name.endsWith(".pdf")){
-      let reader = new FileReader();
-      reader.onload = async function(){
-        let pdf = await pdfjsLib.getDocument({data: reader.result}).promise;
-        let text = "";
-
-        for(let i=1;i<=pdf.numPages;i++){
-          let page = await pdf.getPage(i);
-          let content = await page.getTextContent();
-          text += content.items.map(i => i.str).join(" ");
-        }
-
-        extractFromText(text);
-      };
-      reader.readAsArrayBuffer(file);
-    }
-
-    // 🖼️ Image OCR
-    else if(file.type.startsWith("image")){
-      const { data: { text } } = await Tesseract.recognize(file, 'eng');
-      extractFromText(text);
-    }
-  }
-
-  alert("ไฟล์โหลดแล้ว (Auto detect)");
+  reader.readAsBinaryString(e.target.files[0]);
 });
 
-// 🔹 text extractor
-function extractFromText(text){
-  let lines = text.split("\n");
-
-  lines.forEach(line=>{
-    let m = line.match(/(.*)\s+(\d+)\s+([\d,.]+)/);
-    if(m){
-      data.push({
-        item: m[1],
-        qty: parseFloat(m[2]),
-        price: parseFloat(m[3].replace(/,/g,"")),
-        currency: "USD"
-      });
-    }
-  });
+function renderMapping(){
+  let html = "<h3>Select Columns</h3>";
+  html += createSelect("item","Item");
+  html += createSelect("qty","Qty");
+  html += createSelect("price","Price");
+  document.getElementById("mapping").innerHTML = html;
 }
 
-// 🔹 calculate
-function process(){
-  let freight = parseFloat(document.getElementById('freight').value);
-  let rate = parseFloat(document.getElementById('rate').value);
-  let taxRate = parseFloat(document.getElementById('tax').value)/100;
-  let clearing = parseFloat(document.getElementById('clear').value);
-
-  let totalCFR = 0;
-
-  data.forEach(r=>{
-    r.priceUSD = convertToUSD(r.price, r.currency);
-    r.total = r.qty * r.priceUSD;
-    totalCFR += r.total;
+function createSelect(id,label){
+  let html = label + ": <select id='"+id+"'>";
+  headers.forEach((h,i)=>{
+    html += `<option value="${i}">${h}</option>`;
   });
+  html += "</select><br>";
+  return html;
+}
 
-  let tbody = document.querySelector("#table tbody");
-  tbody.innerHTML = "";
+function loadData(){
 
-  data.forEach(r=>{
-    let freightShare = (r.total / totalCFR) * freight;
-    let cif = r.total + freightShare;
-    let tax = cif * taxRate;
-    let clearingShare = (r.total / totalCFR) * clearing;
-    let totalTHB = (cif + tax) * rate + clearingShare;
-    let costUnit = totalTHB / r.qty;
+  let itemCol = document.getElementById("item").value;
+  let qtyCol = document.getElementById("qty").value;
+  let priceCol = document.getElementById("price").value;
+
+  let table = document.getElementById("editTable");
+  table.innerHTML = "<tr><th>Item</th><th>Qty</th><th>Unit Price</th></tr>";
+
+  rawData.slice(1).forEach((r)=>{
+    let item = r[itemCol] || "";
+    let qty = r[qtyCol] || 0;
+    let price = r[priceCol] || 0;
 
     let row = `<tr>
-      <td>${r.item}</td>
-      <td>${r.qty}</td>
-      <td>${r.price}</td>
-      <td>${r.currency}</td>
-      <td>${r.total.toFixed(2)}</td>
-      <td>${cif.toFixed(2)}</td>
-      <td>${tax.toFixed(2)}</td>
-      <td>${totalTHB.toFixed(2)}</td>
-      <td>${costUnit.toFixed(2)}</td>
+      <td><input value="${item}"></td>
+      <td><input type="number" value="${qty}"></td>
+      <td><input type="number" value="${price}"></td>
     </tr>`;
 
-    tbody.innerHTML += row;
-
-    r.export = {
-      Item: r.item,
-      Qty: r.qty,
-      CostPerUnit: costUnit
-    };
+    table.innerHTML += row;
   });
 }
 
-// 🔹 export
-function download(){
-  let ws = XLSX.utils.json_to_sheet(data.map(r=>r.export));
-  let wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Result");
-  XLSX.writeFile(wb, "cost_result.xlsx");
+function process(){
+
+  let rows = document.querySelectorAll("#editTable tr");
+
+  let freight = parseFloat(document.getElementById("freight").value) || 0;
+  let rate = parseFloat(document.getElementById("rate").value) || 0;
+  let taxRate = (parseFloat(document.getElementById("tax").value) || 0) / 100;
+  let container = parseFloat(document.getElementById("container").value) || 0;
+
+  // 🔥 ค่าเคลียร์ = 40,000 ต่อ ตู้
+  let clearingTotal = container * 40000;
+
+  let data = [];
+  let totalCFR = 0;
+
+  rows.forEach((r,i)=>{
+    if(i===0) return;
+
+    let inputs = r.querySelectorAll("input");
+
+    let item = inputs[0].value;
+    let qty = parseFloat(inputs[1].value) || 0;
+    let price = parseFloat(inputs[2].value) || 0;
+
+    if(qty === 0 || price === 0) return;
+
+    let total = qty * price;
+    totalCFR += total;
+
+    data.push({item,qty,price,total});
+  });
+
+  let html = "<tr><th>Item</th><th>Cost/Unit (THB)</th></tr>";
+
+  data.forEach(r=>{
+    let freightShare = totalCFR ? (r.total/totalCFR)*freight : 0;
+    let cif = r.total + freightShare;
+    let tax = cif * taxRate;
+    let clearingShare = totalCFR ? (r.total/totalCFR)*clearingTotal : 0;
+
+    let totalTHB = (cif + tax)*rate + clearingShare;
+    let costUnit = r.qty ? totalTHB / r.qty : 0;
+
+    html += `<tr>
+      <td>${r.item}</td>
+      <td>${costUnit.toFixed(2)}</td>
+    </tr>`;
+  });
+
+  document.getElementById("result").innerHTML = html;
 }
+
 </script>
 
 </body>
