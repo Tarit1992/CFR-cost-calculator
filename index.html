@@ -20,8 +20,11 @@ input { width:90px; }
 Freight (USD): <input id="freight" value="0">
 Exchange Rate: <input id="rate" value="33">
 Tax %: <input id="tax" value="0">
-Cost / Container (THB): <input id="clearRate" value="40000">
-Number of Containers: <input id="container" value="0">
+
+<br><br>
+
+Containers (Qty): <input id="containerQty" value="0">
+Clearing Cost / Container (THB): <input id="clearPerContainer" value="40000">
 
 <br><br>
 <button onclick="calculate()">Calculate</button>
@@ -32,7 +35,7 @@ Number of Containers: <input id="container" value="0">
 <th>Item</th>
 <th>Qty</th>
 <th>Unit Price (USD)</th>
-<th>Total CFR</th>
+<th>Total CFR (USD)</th>
 </tr>
 </table>
 
@@ -41,7 +44,7 @@ Number of Containers: <input id="container" value="0">
 
 <script>
 
-// 🔥 สร้าง 20 รายการ
+// 🔥 สร้าง 20 แถว
 let table = document.getElementById("table");
 
 for(let i=1;i<=20;i++){
@@ -62,15 +65,17 @@ function calculate(){
   let freight = parseFloat(document.getElementById("freight").value) || 0;
   let rate = parseFloat(document.getElementById("rate").value) || 0;
   let taxRate = (parseFloat(document.getElementById("tax").value) || 0)/100;
-  let clearRate = parseFloat(document.getElementById("clearRate").value) || 0;
-  let container = parseFloat(document.getElementById("container").value) || 0;
 
-  let clearingTotal = clearRate * container;
+  let containerQty = parseFloat(document.getElementById("containerQty").value) || 0;
+  let clearPerContainer = parseFloat(document.getElementById("clearPerContainer").value) || 0;
+
+  // 🔥 รวมค่าเคลียร์
+  let clearingTotal = containerQty * clearPerContainer;
 
   let data = [];
   let totalCFR = 0;
 
-  // 🔹 คำนวณ CFR ต่อรายการ
+  // คำนวณ CFR
   rows.forEach((r,i)=>{
     if(i===0) return;
 
@@ -95,23 +100,26 @@ function calculate(){
   <tr>
     <th>Item</th>
     <th>Total CFR (USD)</th>
-    <th>Allocated Cost (THB)</th>
+    <th>Total Cost (THB)</th>
     <th>Cost/Unit (THB)</th>
   </tr>`;
 
-  // 🔹 คำนวณปันต้นทุน
+  // 🔥 ปันต้นทุน
   data.forEach(r=>{
 
     let ratio = totalCFR ? r.total / totalCFR : 0;
 
-    // 🔥 ปันค่าใช้จ่าย
     let freightTHB = freight * rate * ratio;
     let clearingTHB = clearingTotal * ratio;
 
-    let cif = r.total + (freight * ratio);
-    let tax = cif * taxRate;
+    let cifUSD = r.total + (freight * ratio);
+    let taxUSD = cifUSD * taxRate;
 
-    let totalTHB = (r.total * rate) + freightTHB + clearingTHB + (tax * rate);
+    let totalTHB =
+      (r.total * rate) +        // CFR
+      freightTHB +              // Freight
+      clearingTHB +             // Clearing
+      (taxUSD * rate);          // Tax
 
     let costUnit = totalTHB / r.qty;
 
