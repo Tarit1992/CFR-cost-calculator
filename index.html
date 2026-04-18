@@ -2,32 +2,38 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>CFR Simple Calculator</title>
+<title>CFR Cost Calculator</title>
 
 <style>
 body { font-family: Arial; padding:20px; }
 table { border-collapse: collapse; margin-top:10px; }
-td,th { border:1px solid #ccc; padding:6px; }
-input { width:80px; }
+td,th { border:1px solid #ccc; padding:6px; text-align:center; }
+input { width:90px; }
 </style>
 
 </head>
 
 <body>
 
-<h2>📊 CFR Calculator (Simple)</h2>
+<h2>📊 CFR Cost Calculator (Manual)</h2>
 
 Freight (USD): <input id="freight" value="0">
-Rate: <input id="rate" value="33">
+Exchange Rate: <input id="rate" value="33">
 Tax %: <input id="tax" value="0">
-Containers: <input id="container" value="0">
+Cost / Container (THB): <input id="clearRate" value="40000">
+Number of Containers: <input id="container" value="0">
 
 <br><br>
 <button onclick="calculate()">Calculate</button>
 
 <h3>Items</h3>
 <table id="table">
-<tr><th>Item</th><th>Qty</th><th>Unit Price</th></tr>
+<tr>
+<th>Item</th>
+<th>Qty</th>
+<th>Unit Price (USD)</th>
+<th>Total CFR</th>
+</tr>
 </table>
 
 <h3>Result</h3>
@@ -44,6 +50,7 @@ for(let i=1;i<=20;i++){
     <td><input value="Item ${i}"></td>
     <td><input type="number" value="0"></td>
     <td><input type="number" value="0"></td>
+    <td class="cfr">0</td>
   </tr>`;
 }
 
@@ -55,13 +62,15 @@ function calculate(){
   let freight = parseFloat(document.getElementById("freight").value) || 0;
   let rate = parseFloat(document.getElementById("rate").value) || 0;
   let taxRate = (parseFloat(document.getElementById("tax").value) || 0)/100;
+  let clearRate = parseFloat(document.getElementById("clearRate").value) || 0;
   let container = parseFloat(document.getElementById("container").value) || 0;
 
-  let clearingTotal = container * 40000;
+  let clearingTotal = clearRate * container;
 
   let data = [];
   let totalCFR = 0;
 
+  // 🔹 คำนวณ CFR ต่อรายการ
   rows.forEach((r,i)=>{
     if(i===0) return;
 
@@ -71,27 +80,45 @@ function calculate(){
     let qty = parseFloat(inputs[1].value) || 0;
     let price = parseFloat(inputs[2].value) || 0;
 
+    let total = qty * price;
+
+    r.querySelector(".cfr").innerText = total.toFixed(2);
+
     if(qty === 0 || price === 0) return;
 
-    let total = qty * price;
     totalCFR += total;
 
     data.push({item,qty,price,total});
   });
 
-  let html = "<tr><th>Item</th><th>Cost/Unit (THB)</th></tr>";
+  let html = `
+  <tr>
+    <th>Item</th>
+    <th>Total CFR (USD)</th>
+    <th>Allocated Cost (THB)</th>
+    <th>Cost/Unit (THB)</th>
+  </tr>`;
 
+  // 🔹 คำนวณปันต้นทุน
   data.forEach(r=>{
-    let freightShare = totalCFR ? (r.total/totalCFR)*freight : 0;
-    let cif = r.total + freightShare;
-    let tax = cif * taxRate;
-    let clearingShare = totalCFR ? (r.total/totalCFR)*clearingTotal : 0;
 
-    let totalTHB = (cif + tax)*rate + clearingShare;
+    let ratio = totalCFR ? r.total / totalCFR : 0;
+
+    // 🔥 ปันค่าใช้จ่าย
+    let freightTHB = freight * rate * ratio;
+    let clearingTHB = clearingTotal * ratio;
+
+    let cif = r.total + (freight * ratio);
+    let tax = cif * taxRate;
+
+    let totalTHB = (r.total * rate) + freightTHB + clearingTHB + (tax * rate);
+
     let costUnit = totalTHB / r.qty;
 
     html += `<tr>
       <td>${r.item}</td>
+      <td>${r.total.toFixed(2)}</td>
+      <td>${totalTHB.toFixed(2)}</td>
       <td>${costUnit.toFixed(2)}</td>
     </tr>`;
   });
