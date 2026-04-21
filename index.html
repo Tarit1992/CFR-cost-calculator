@@ -9,13 +9,14 @@ body { font-family: Arial; padding:20px; }
 table { border-collapse: collapse; margin-top:10px; }
 td,th { border:1px solid #ccc; padding:6px; text-align:center; }
 input { width:90px; }
+.totalRow { background:#eee; font-weight:bold; }
 </style>
 
 </head>
 
 <body>
 
-<h2>📊 CFR Cost Calculator (Manual)</h2>
+<h2>📊 CFR Cost Calculator (Correct Logic)</h2>
 
 Freight (USD): <input id="freight" value="0">
 Exchange Rate: <input id="rate" value="33">
@@ -23,8 +24,8 @@ Tax %: <input id="tax" value="0">
 
 <br><br>
 
-Containers (Qty): <input id="containerQty" value="0">
-Clearing Cost / Container (THB): <input id="clearPerContainer" value="40000">
+Containers: <input id="containerQty" value="0">
+Clearing / Container (THB): <input id="clearPerContainer" value="40000">
 
 <br><br>
 <button onclick="calculate()">Calculate</button>
@@ -35,16 +36,19 @@ Clearing Cost / Container (THB): <input id="clearPerContainer" value="40000">
 <th>Item</th>
 <th>Qty</th>
 <th>Unit Price (USD)</th>
-<th>Total CFR (USD)</th>
+<th>FOB (USD)</th>
 </tr>
 </table>
+
+<h3>Summary</h3>
+<table id="summary"></table>
 
 <h3>Result</h3>
 <table id="result"></table>
 
 <script>
 
-// 🔥 สร้าง 20 แถว
+// สร้าง 20 รายการ
 let table = document.getElementById("table");
 
 for(let i=1;i<=20;i++){
@@ -53,29 +57,27 @@ for(let i=1;i<=20;i++){
     <td><input value="Item ${i}"></td>
     <td><input type="number" value="0"></td>
     <td><input type="number" value="0"></td>
-    <td class="cfr">0</td>
+    <td class="fob">0</td>
   </tr>`;
 }
 
-// 🔥 คำนวณ
 function calculate(){
 
   let rows = document.querySelectorAll("#table tr");
 
-  let freight = parseFloat(document.getElementById("freight").value) || 0;
+  let freightUSD = parseFloat(document.getElementById("freight").value) || 0;
   let rate = parseFloat(document.getElementById("rate").value) || 0;
   let taxRate = (parseFloat(document.getElementById("tax").value) || 0)/100;
 
   let containerQty = parseFloat(document.getElementById("containerQty").value) || 0;
   let clearPerContainer = parseFloat(document.getElementById("clearPerContainer").value) || 0;
 
-  // 🔥 รวมค่าเคลียร์
-  let clearingTotal = containerQty * clearPerContainer;
+  let clearingTHB = containerQty * clearPerContainer;
 
   let data = [];
-  let totalCFR = 0;
+  let totalFOB = 0;
 
-  // คำนวณ CFR
+  // 🔹 คำนวณ FOB
   rows.forEach((r,i)=>{
     if(i===0) return;
 
@@ -85,47 +87,59 @@ function calculate(){
     let qty = parseFloat(inputs[1].value) || 0;
     let price = parseFloat(inputs[2].value) || 0;
 
-    let total = qty * price;
+    let fob = qty * price;
 
-    r.querySelector(".cfr").innerText = total.toFixed(2);
+    r.querySelector(".fob").innerText = fob.toFixed(2);
 
     if(qty === 0 || price === 0) return;
 
-    totalCFR += total;
+    totalFOB += fob;
 
-    data.push({item,qty,price,total});
+    data.push({item,qty,price,fob});
   });
 
+  // 🔹 คำนวณค่าใช้จ่ายรวม
+  let freightTHB = freightUSD * rate;
+
+  let cifUSD = totalFOB + freightUSD;
+  let taxUSD = cifUSD * taxRate;
+  let taxTHB = taxUSD * rate;
+
+  let totalExtraCost = freightTHB + taxTHB + clearingTHB;
+
+  // 🔹 Summary
+  document.getElementById("summary").innerHTML = `
+    <tr class="totalRow"><td>Total FOB</td><td>${totalFOB.toFixed(2)} USD</td></tr>
+    <tr class="totalRow"><td>Freight</td><td>${freightTHB.toFixed(2)} THB</td></tr>
+    <tr class="totalRow"><td>Tax</td><td>${taxTHB.toFixed(2)} THB</td></tr>
+    <tr class="totalRow"><td>Clearing</td><td>${clearingTHB.toFixed(2)} THB</td></tr>
+    <tr class="totalRow"><td>Total Extra Cost</td><td>${totalExtraCost.toFixed(2)} THB</td></tr>
+  `;
+
+  // 🔹 ปันต้นทุน
   let html = `
   <tr>
     <th>Item</th>
-    <th>Total CFR (USD)</th>
+    <th>FOB (USD)</th>
+    <th>Allocated Cost (THB)</th>
     <th>Total Cost (THB)</th>
     <th>Cost/Unit (THB)</th>
   </tr>`;
 
-  // 🔥 ปันต้นทุน
   data.forEach(r=>{
 
-    let ratio = totalCFR ? r.total / totalCFR : 0;
+    let ratio = totalFOB ? r.fob / totalFOB : 0;
 
-    let freightTHB = freight * rate * ratio;
-    let clearingTHB = clearingTotal * ratio;
+    let allocated = totalExtraCost * ratio;
 
-    let cifUSD = r.total + (freight * ratio);
-    let taxUSD = cifUSD * taxRate;
-
-    let totalTHB =
-      (r.total * rate) +        // CFR
-      freightTHB +              // Freight
-      clearingTHB +             // Clearing
-      (taxUSD * rate);          // Tax
+    let totalTHB = (r.fob * rate) + allocated;
 
     let costUnit = totalTHB / r.qty;
 
     html += `<tr>
       <td>${r.item}</td>
-      <td>${r.total.toFixed(2)}</td>
+      <td>${r.fob.toFixed(2)}</td>
+      <td>${allocated.toFixed(2)}</td>
       <td>${totalTHB.toFixed(2)}</td>
       <td>${costUnit.toFixed(2)}</td>
     </tr>`;
